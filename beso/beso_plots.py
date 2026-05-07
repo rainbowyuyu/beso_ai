@@ -4,44 +4,53 @@ import matplotlib.pyplot as plt
 import os
 
 
+def _plot_pause():
+    """Agg 等非交互后端不支持 plt.pause；用 draw_idle 刷新画布即可。"""
+    try:
+        fig = plt.gcf()
+        fig.canvas.draw_idle()
+    except Exception:
+        pass
+
+
 def plotshow(domain_FI_filled, optimization_base, displacement_graph):
     """prepare figures for incremental plotting"""
     fn = 10  # figure number
     # plot mass
     fn += 1
     plt.figure(fn)
-    plt.pause(0.000001)
+    _plot_pause()
     if domain_FI_filled:  # FI contain something
         # plot number of elements with FI > 1
         fn += 1
         plt.figure(fn)
-        plt.pause(0.000001)
+        _plot_pause()
         # plot mean failure index
         fn += 1
         plt.figure(fn)
-        plt.pause(0.000001)
+        _plot_pause()
         # plot maximal failure indices
         fn += 1
         plt.figure(fn)
-        plt.pause(0.000001)
+        _plot_pause()
     if optimization_base == "stiffness":
         # plot mean energy density
         fn += 1
         plt.figure(fn)
-        plt.pause(0.000001)
+        _plot_pause()
     if optimization_base == "heat":
         # plot mean heat flux
         fn += 1
         plt.figure(fn)
-        plt.pause(0.000001)
+        _plot_pause()
     if displacement_graph:
         fn += 1
         plt.figure(fn)
-        plt.pause(0.000001)
+        _plot_pause()
     if optimization_base == "buckling":
         fn += 1
         plt.figure(fn)
-        plt.pause(0.000001)
+        _plot_pause()
 
 
 def replot(path, i, oscillations, mass, domain_FI_filled, domains_from_config, FI_violated, FI_mean, FI_mean_without_state0,

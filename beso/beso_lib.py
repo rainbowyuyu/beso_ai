@@ -1,3 +1,5 @@
+import re
+
 import numpy as np
 import operator
 from math import *
@@ -457,6 +459,67 @@ def elm_volume_cg(file_name, nodes, Elements):
     return cg, cg_min, cg_max, volume_elm, area_elm
 
 
+def _strip_inp_line_beso(line):
+    return line.strip().lstrip("\ufeff\ufffe")
+
+
+def _consume_solid_section_block(lines, start_idx):
+    """返回 ``(end_idx_exclusive, merged_header)``，合并 *SOLID SECTION 的逗号续行。"""
+    n = len(lines)
+    i = start_idx + 1
+    merged = _strip_inp_line_beso(lines[start_idx])
+    while i < n:
+        t = _strip_inp_line_beso(lines[i])
+        if not t:
+            i += 1
+            continue
+        if t.startswith("*") and not t.startswith(","):
+            break
+        if t.startswith(","):
+            merged += t
+            i += 1
+            continue
+        break
+    return i, merged
+
+
+def _elset_from_solid_merged(merged):
+    m = re.search(r"(?i)\bELSET\s*=\s*([^,\n]+)", merged)
+    if not m:
+        return None
+    return m.group(1).strip()
+
+
+def filter_lines_remove_base_solids_for_optimized_domains(lines, domains_from_config, domain_optimized):
+    """
+    去掉基 INP 里「已优化域」原有的 *SOLID SECTION 整块（含续行），
+    仅由 write_inp 在首个 *STEP 前写入的 ``{domain}{state}`` 材料+截面覆盖该域单元；
+    避免与 ``design_space`` + MATERIAL=MSteel 等基截面并存导致 CalculiX 报 nonexistent material。
+    """
+    dnames_opt = {str(d).strip() for d in (domains_from_config or []) if domain_optimized.get(d)}
+    if not dnames_opt:
+        return lines
+    dnames_ci = {d.lower() for d in dnames_opt}
+    out = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        raw = lines[i]
+        s = _strip_inp_line_beso(raw)
+        if not s.upper().startswith("*SOLID"):
+            out.append(raw)
+            i += 1
+            continue
+        j, merged = _consume_solid_section_block(lines, i)
+        elset = _elset_from_solid_merged(merged)
+        if elset and elset.lower() in dnames_ci:
+            i = j
+            continue
+        out.extend(lines[i:j])
+        i = j
+    return out
+
+
 # function for copying .inp file with additional elsets, materials, solid and shell sections, different output request
 # elm_states is a dict of the elements containing 0 for void element or 1 for full element
 def write_inp(file_name, file_nameW, elm_states, number_of_states, domains, domains_from_config, domain_optimized,
@@ -467,6 +530,11 @@ def write_inp(file_name, file_nameW, elm_states, number_of_states, domains, doma
         fR = open(file_name[:-4] + "_separated.inp", "r")
     else:
         fR = open(file_name, "r")
+    try:
+        lines = fR.readlines()
+    finally:
+        fR.close()
+    lines = filter_lines_remove_base_solids_for_optimized_domains(lines, domains_from_config, domain_optimized)
     check_line_endings = False
     try:
         fW = open(file_nameW + ".inp", "w", newline="\n")
@@ -529,7 +597,7 @@ def write_inp(file_name, file_nameW, elm_states, number_of_states, domains, doma
     elset_new = {}
     elsets_used = {}
     msg_error = ""
-    for line in fR:
+    for line in lines:
         if line[0] == "*":
             commenting = False
 
@@ -632,7 +700,6 @@ def write_inp(file_name, file_nameW, elm_states, number_of_states, domains, doma
                 continue
 
         fW.write(line)
-    fR.close()
     fW.close()
     if check_line_endings:
         fW = open(file_nameW + ".inp", "rb")
